@@ -1,3 +1,5 @@
 logs/*
 report/*
 *.tar.gz
+logs/
+report/
