@@ -9,7 +9,6 @@ ALERT_LOG=~/ops/logs/alert_$(date +%F).log
 echo "===================="
 echo "告警模块"
 echo "===================="
-
 echo "告警标题: $TITLE"
 echo "告警内容: $CONTENT"
 
@@ -22,7 +21,7 @@ source ~/ops-project/scripts/config.cfg
 # 发送邮件告警
 echo "$CONTENT" | msmtp "$ALERT_EMAIL"
 
-# 企业微信 Webhook (如果配置了再发送)
+# 企业微信 Webhook (暂时不启用)
 if [[ -n "$WECHAT_WEBHOOK" && "$WECHAT_WEBHOOK" != "YOUR_WEBHOOK_KEY" ]]; then
   curl -s -X POST "$WECHAT_WEBHOOK" \
     -H 'Content-Type: application/json' \

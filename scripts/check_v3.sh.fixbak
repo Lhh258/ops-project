@@ -1,0 +1,110 @@
+#!/bin/bash
+
+# ------------------------
+# 路径设置
+LOGDIR="$HOME/ops/logs"
+REPORTDIR="$HOME/ops/report"
+SCRIPTDIR="$HOME/ops-project/scripts"
+
+LOGFILE="$LOGDIR/check_$(date +%F).log"
+HTMLFILE="$REPORTDIR/report_$(date +%F).html"
+
+mkdir -p "$LOGDIR" "$REPORTDIR"
+
+# ------------------------
+# 内存巡检
+MEM_USAGE=$(free -m | awk 'NR==2 {printf "%.0f", $3/$2*100}')
+MEM_STATUS="正常"
+if [ "$MEM_USAGE" -ge 80 ]; then
+    MEM_STATUS="异常"
+    MEM_CLASS="warning"
+    "$SCRIPTDIR/alert.sh" "内存告警" "内存使用率 $MEM_USAGE% 超过阈值"
+else
+    MEM_CLASS="ok"
+fi
+
+# CPU巡检
+CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk '{print int($2+$4)}')
+CPU_STATUS="正常"
+if [ "$CPU_USAGE" -ge 85 ]; then
+    CPU_STATUS="异常"
+    CPU_CLASS="warning"
+    "$SCRIPTDIR/alert.sh" "CPU告警" "CPU使用率 $CPU_USAGE% 超过阈值"
+else
+    CPU_CLASS="ok"
+fi
+
+# 磁盘巡检
+DISK_USAGE=$(df -h / | awk 'NR==2 {print int($5)}')
+DISK_STATUS="正常"
+if [ "$DISK_USAGE" -ge 90 ]; then
+    DISK_STATUS="异常"
+    DISK_CLASS="warning"
+    "$SCRIPTDIR/alert.sh" "磁盘告警" "磁盘使用率 $DISK_USAGE% 超过阈值"
+else
+    DISK_CLASS="ok"
+fi
+
+# Nginx巡检
+NGINX_STATUS="正常"
+systemctl is-active nginx >/dev/null 2>&1 || {
+    NGINX_STATUS="异常"
+    "$SCRIPTDIR/alert.sh" "Nginx告警" "Nginx服务未运行，尝试重启"
+    sudo systemctl restart nginx
+    systemctl is-active nginx >/dev/null 2>&1 && "$SCRIPTDIR/alert.sh" "Nginx告警" "Nginx已重启成功"
+}
+NGINX_CLASS=$([[ "$NGINX_STATUS" == "正常" ]] && echo ok || echo warning)
+
+# ------------------------
+# 输出日志
+{
+echo "巡检日期: $(date)"
+echo "CPU: $CPU_STATUS ($CPU_USAGE%)"
+echo "内存: $MEM_STATUS ($MEM_USAGE%)"
+echo "磁盘: $DISK_STATUS ($DISK_USAGE%)"
+echo "Nginx: $NGINX_STATUS"
+} > "$LOGFILE"
+
+# ------------------------
+# 生成 HTML报表
+cat > "$HTMLFILE" <<EOF
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>服务器巡检报告</title>
+<style>
+body { font-family: Arial, sans-serif; background-color:#f5f5f5; padding:20px; }
+h1 { background:#2c3e50;color:white; padding:10px; }
+table { border-collapse: collapse; width:300px; }
+th, td { border: 1px solid #000; padding:10px; text-align:center; }
+.status-ok { color:green; font-weight:bold; }
+.status-warning { color:red; font-weight:bold; }
+</style>
+</head>
+<body>
+<h1>服务器巡检报告</h1>
+<table>
+<tr><th>项目</th><th>状态</th></tr>
+<tr><td>CPU</td><td class="status-$CPU_CLASS">$CPU_STATUS ($CPU_USAGE%)</td></tr>
+<tr><td>内存</td><td class="status-$MEM_CLASS">$MEM_STATUS ($MEM_USAGE%)</td></tr>
+<tr><td>磁盘</td><td class="status-$DISK_CLASS">$DISK_STATUS ($DISK_USAGE%)</td></tr>
+<tr><td>Nginx</td><td class="status-$NGINX_CLASS">$NGINX_STATUS</td></tr>
+</table>
+</body>
+</html>
+EOF
+
+# ------------------------
+# 自动更新 index.html
+cp "$HTMLFILE" "$REPORTDIR/index.html"
+
+# ------------------------
+# 清理30天以前日志与报表
+find "$LOGDIR" -name "alert_*.log" -mtime +30 -delete
+find "$REPORTDIR" -name "report_*.html" -mtime +30 -delete
+
+# ------------------------
+echo "巡检完成"
+echo "日志文件: $LOGFILE"
+echo "HTML报表: $HTMLFILE"
